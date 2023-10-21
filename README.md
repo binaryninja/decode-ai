@@ -1,17 +1,19 @@
 # Project Lupine
 ![alt text](https://github.com/binaryninja/decode-ai/blob/main/utils/static/ProjectLupine.png?raw=true)
-
+![alt text](https://github.com/binaryninja/decode-ai/blob/main/utils/static/flowchart.png?raw=true)
 # Plugins:
 There are three Ghidra plugins each with their own configured shortcut keys.
 
 ## llm.py (CTRL-ALT-L)
-This script calls your local LLM.  The plugin expects api_server.py to be running on localhost on port 8000.  Documentation for the API server can be found below.
+This script calls your local LLM.  It requests a new function name and function description.  It renames the function and updates the somments with the description.  Your cursor can be anywhere inside the decompiled function that you're interested in.
+
+The plugin expects api_server.py to be running on localhost on port 8000.  Documentation for the API server can be found below.
 
 ## llm_remote.pt (CTRL-ALT-O)
-This script calls the Project Lupine community server.  Not that it send the hash, function offset, and decompiled code.
+This script calls the Project Lupine community server.  It requests a new function name and function description.  It renames the function and updates the somments with the description.  Note that it sends the hash, function offset, and decompiled code to the community server.  
 
 ## llm_suggest (CTRL-SHIFT-K)
-This script is useful for contributing back to the community.  If you get a summay, function name or step-by-step description that you don't like you can edit the content directly in Ghidra and send your edits back.
+This script is useful for contributing back to the community.  If you get a summary, function name or step-by-step description that you don't like you can edit the content directly in Ghidra and send your edits back.  Note that it sends the hash, function offset, and decompiled code, function name, function comment to the community server.  The 
 
 # Utilities
 This section contains the api_server and several helper utilities for loading data and testing the model.
