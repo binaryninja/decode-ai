@@ -1,5 +1,5 @@
 # decode-ai
-![alt text](https://github.com/decode-ai/blob/main/utils/static/ProjectLupine.png?raw=true)
+![alt text](https://github.com/binaryninja/decode-ai/blob/main/utils/static/ProjectLupine.png?raw=true)
 
 # Plugins:
 
