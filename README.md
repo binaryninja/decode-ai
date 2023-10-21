@@ -1,4 +1,6 @@
 # decode-ai
+![alt text](https://github.com/decode-ai/blob/main/utils/static/ProjectLupine.jpg?raw=true)
+
 # Plugins:
 
 

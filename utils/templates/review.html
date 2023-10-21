@@ -1,0 +1,180 @@
+<!-- templates/review.html -->
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Review Dataset Item</title>
+        <link href="/static/prism.css" rel="stylesheet" />
+        <script src="/static/prism.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/3.0.8/marked.min.js"></script>
+
+
+        <style>
+.container {
+    display: flex;
+    justify-content: flex-start; /* aligns items to the left */
+}
+
+/* Analysis results div */
+.analysis {
+    width: 50%; /* or adjust the width as you see fit */
+    padding: 10px;
+    position: relative;  /* Make this div a reference point for absolute positioning */
+
+}
+
+/* Code div */
+.code {
+    width: 50%; /* or adjust the width as you see fit */
+    padding: 10px;
+    border-right: 1px solid #ddd; /* optional border between divs */
+}
+    
+            .description-text {
+                white-space: pre-wrap; /* Preserve whitespace and allow text wrapping */
+                word-wrap: break-word; 
+            }
+    
+            /* Additional styles from your EXAMPLE SOURCE */
+            input[type=range] {
+                width: 100%;
+            }
+            td:nth-child(2), td:nth-child(3) {
+                max-width: 400px;
+                word-wrap: break-word;
+            }
+            #saveButton {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+    }
+            
+        </style>
+    </head>
+
+<body>
+
+    <script>
+        window.onload = function() {
+            const category = "{{ selected_category }}";  // Get the category from the backend
+            document.getElementById("category").value = category;
+            updateSuggestedName()
+            renderMarkdown();  // Render any existing markdown content
+
+        }
+    
+        function performAction(actionType, functionId) {
+            const category = document.getElementById("category").value;
+            fetch('/action', {
+                method: 'POST',
+                body: JSON.stringify({ action_type: actionType, function_id: functionId }),
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === "success") {
+                    // Refresh the page with the selected category
+                    window.location.href = `/review?category=${category}`;
+                }
+            });
+        }
+    
+        function loadFilteredFunctions() {
+            const category = document.getElementById("category").value;
+            window.location.href = `/review?category=${category}`;
+        }
+    
+        function updateOutput(functionId) {
+    const modifiedOutput = document.getElementById("modified_output").value;
+    const modifiedShortSummary = document.getElementById("modified_short_summary").value;  // Capture the modified short summary    
+    const modifiedStepByStep = document.getElementById("modified_step_by_step").value;  // Capture the modified short summary
+    fetch('/update-output', {
+        method: 'POST',
+        body: JSON.stringify({ function_id: functionId, new_output: modifiedOutput, new_short_summary: modifiedShortSummary, new_step_by_step_description: modifiedStepByStep }),  // Send the modified short summary
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === "success") {
+            performAction('approve', functionId);
+        }
+    });
+}
+    
+        function updateSuggestedName() {
+            const category = document.getElementById("category").value;
+            const modifiedOutputField = document.getElementById("modified_output");
+            modifiedOutputField.value = category + "_{{ analysis_results.llm_name }}";
+        }
+
+        function renderMarkdown() {
+    let markdownContent = document.getElementById("modified_step_by_step").value;
+    // markdownContent = convertLineBreaksToHTML(markdownContent); // add this line
+    const htmlContent = marked(markdownContent);
+    document.getElementById("markdown_rendered").innerHTML = htmlContent;
+}
+// function convertLineBreaksToHTML(text) {
+//     return text.replace(/\n/g, "<br>");
+// }
+    </script>
+
+    <h2>Review Dataset Item</h2>
+
+    <select id="category" onchange="updateSuggestedName()">
+        <option value="all">All</option>
+        <option value="enumeration">Enumeration</option>
+        <option value="injection">Injection</option>
+        <option value="evasion">Evasion</option>
+        <option value="spying">Spying</option>
+        <option value="internet">Internet</option>
+        <option value="anti_debugging">Anti-Debugging</option>
+        <option value="ransomware">Ransomware</option>
+        <option value="helper">Helper</option>
+    <!-- </select>
+    <button onclick="loadFilteredFunctions()">Filter</button>
+    <h4>Unreviewed Items Remaining: {{ unreviewed_count }}</h4>
+    <h3>Suggested name: {{ data_item.output }} </h3>
+    <h3>Modify Suggested name:</h3>
+<input type="text" id="modified_output" value="{{ data_item.output }}"/>
+<button onclick="updateOutput({{ data_item['id'] }})">Save Changes</button> -->
+
+</select>
+<button onclick="loadFilteredFunctions()">Filter</button>
+<h4>Unreviewed Items Remaining: {{ unreviewed_count }}</h4>
+
+<div class="container">
+    <div class="analysis">
+        <button id="saveButton" onclick="updateOutput({{ data_item['id'] }})">Save Changes</button>
+
+        <h3>Suggested name: {{ data_item.output }} </h3>
+        <h3>LLM Suggested name:</h3>
+        <input type="text" id="modified_output" value="{{ data_item.output }}" style="width: 500px; height: 40px; font-size: 18px;">
+        <!-- <button onclick="updateOutput({{ data_item['id'] }})">Save Changes</button> -->
+
+        <h4>LLM Summary:</h4>
+        <pre>{{ analysis_results.llm_short_summary|safe }}</pre>
+
+        <h4>Modify Short Summary:</h4>
+        <textarea id="modified_short_summary" style="width: 800px; height: 100px; font-size: 16px;">{{ analysis_results.llm_short_summary }}</textarea>
+
+        <h4>Modified by step Summary:</h4>
+        <!-- <textarea id="modified_step_by_step" style="width: 800px; height: 700px; font-size: 16px;">{{ analysis_results.llm_step_by_step_description }}</textarea> -->
+        <div id="markdown_rendered" style="border:1px solid #ccc; padding:10px; margin-top:10px;"></div>
+        <textarea id="modified_step_by_step" oninput="renderMarkdown()" style="width: 800px; height: 700px; font-size: 16px;">{{ analysis_results.llm_step_by_step_description }}</textarea>
+
+        
+
+    </div>
+    
+    <div class="code">
+        <h3>Code:</h3>
+        <pre><code class="language-clike">{{ data_item.input|safe }}</code></pre>
+    </div>
+</div>
+</body>
+</html>
