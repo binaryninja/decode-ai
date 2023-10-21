@@ -1,17 +1,27 @@
-# decode-ai
+# Project Lupine
 ![alt text](https://github.com/binaryninja/decode-ai/blob/main/utils/static/ProjectLupine.png?raw=true)
 
 # Plugins:
+There are three Ghidra plugins each with their own configured shortcut keys.
 
+## llm.py (CTRL-ALT-L)
+This script calls your local LLM.  The plugin expects api_server.py to be running on localhost on port 8000.  Documentation for the API server can be found below.
 
-## Utilities
+## llm_remote.pt (CTRL-ALT-O)
+This script calls the Project Lupine community server.  Not that it send the hash, function offset, and decompiled code.
 
-# api_server.py
-## Overview
+## llm_suggest (CTRL-SHIFT-K)
+This script is useful for contributing back to the community.  If you get a summay, function name or step-by-step description that you don't like you can edit the content directly in Ghidra and send your edits back.
+
+# Utilities
+This section contains the api_server and several helper utilities for loading data and testing the model.
+
+## api_server.py
+### Overview
 
 This script provides an API for malware analysis. It uses FastAPI, SQLAlchemy for database operations, the Transformers library to load our local model and generate output, and langchain for interacting with OpenAI models. The core functionality is to analyze a given piece of decompiled code and provide descriptive information, such as a function summary and a new function name.
 
-## Dependencies
+### Dependencies
 
 - **fastapi**: Web framework to build the API.
 - **pydantic**: Data validation and settings management using Python type annotations.
@@ -24,19 +34,19 @@ This script provides an API for malware analysis. It uses FastAPI, SQLAlchemy fo
 - **langchain**: A module possibly related to language processing.
 - **json, re, os, time**: Standard libraries for various functionalities.
 
-## Configuration
+### Configuration
 
 - **DATABASE_URL**: The SQLite database URL.
 - **openai_key**: The API key for OpenAI.
 - **model & tokenizer**: Pre-trained models loaded using Transformers library.
 
-## Database Schema
+### Database Schema
 
 - **Function**: Represents the function table in the database with fields for ID, input, output, review status, and details related to the LLM analysis.
 - **EvaluationLog**: Logs request and response data for evaluations.
 - **Suggestion**: Contains suggestions for code analysis.
 
-## API Endpoints
+### API Endpoints
 
 1. **`/` (GET)**: Returns the main index page.
 2. **`/sample` (GET)**: Provides a sample from the dataset.
@@ -48,7 +58,7 @@ This script provides an API for malware analysis. It uses FastAPI, SQLAlchemy fo
 8. **`/suggest` (POST)**: Stores a suggestion in the Suggestion table.
 9. **`/action` (POST)**: Performs actions like approve or remove on a function.
 
-## Helper Functions
+#### Helper Functions
 
 - **`flatten_list`**: Flattens nested lists or dictionaries.
 - **`get_llm_name_with_retry`**: Attempts to get the LLM name with retries.
@@ -57,7 +67,7 @@ This script provides an API for malware analysis. It uses FastAPI, SQLAlchemy fo
 - **`llm_rename_function`**: Renames the function using LLM.
 - **`load_data_to_db`**: Loads data to the database.
 
-## Execution
+### Execution
 
 To run the FastAPI application:
 
