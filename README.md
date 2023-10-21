@@ -1,6 +1,16 @@
 # Project Lupine
 ![alt text](https://github.com/binaryninja/decode-ai/blob/main/utils/static/ProjectLupine.png?raw=true)
+
+The Lupine project focus on training large language models to understand decompiled code and reverse engineer binaries.  The models takes decompiled C as input and outputs a descriptive function name, functiona summary, and a step-by-step read out of what the code is doing.
+
+Currently, the project's best model is a finetune version of the Code Llama 34B Instruct model.  It is fine tuned on a dataset of 60,000 decompiled functions extracted from 5000 malware samples and 100 unique malware families.
+
+The model is used by out Ghidra plugin to provide function names, and descriptions directly in your IDE.  A feedback mechanism lets you contribute your knowledge and skills back to the collective for assimilation into the model (yonik!)
+
+Below is a rough architecture
 ![alt text](https://github.com/binaryninja/decode-ai/blob/main/utils/static/flowchart.png?raw=true)
+
+
 # Plugins:
 There are three Ghidra plugins each with their own configured shortcut keys.
 
