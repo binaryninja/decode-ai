@@ -98,14 +98,8 @@
             'Content-Type': 'application/json'
         }
     })
-    .then(response => response.json())
-    .then(result => {
-        if (result.status === "success") {
-            performAction('approve', functionId);
-        }
-    });
+    .then(response => response.json());
 }
-    
         function updateSuggestedName() {
             const category = document.getElementById("category").value;
             const modifiedOutputField = document.getElementById("modified_output");

@@ -19,12 +19,24 @@ from langchain.chat_models import ChatOpenAI
 import json
 import re
 import os
+import time
+import tiktoken
 
 
 DATABASE_URL = "sqlite:///./test7.db"
 database = Database(DATABASE_URL)
 metadata = MetaData()
 Base = declarative_base()
+
+#MAIN SITE
+class BetaRequest(Base):
+    __tablename__ = "beta_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)  # Make sure email is unique
+
+class BetaRequestData(BaseModel):
+    email: str
+
 
 # This is the function table
 class Function(Base):
@@ -36,6 +48,26 @@ class Function(Base):
     llm_name = Column(String)
     llm_short_summary = Column(String)
     llm_step_by_step_description = Column(String)
+
+class EvaluationLog(Base):
+    __tablename__ = "evaluation_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    request_data = Column(String)
+    response_data = Column(String)
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+    id = Column(Integer, primary_key=True, index=True)
+    sha256 = Column(String, index=True)
+    offset = Column(String, index=True)
+    code = Column(String)
+    suggestion = Column(String)
+
+class SuggestionData(BaseModel):
+    sha256: str
+    offset: str
+    code: str
+    suggestion: str
 
 class ActionData(BaseModel):
     action_type: str
@@ -64,7 +96,9 @@ approved_dataset = []
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
-llm = ChatOpenAI(temperature=0, model="gpt-4", openai_api_key=openai_key)
+llm4 = ChatOpenAI(temperature=0, model="gpt-4", openai_api_key=openai_key)
+llm3516 = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-16k", openai_api_key=openai_key)
+llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo", openai_api_key=openai_key)
 
 # Load the dataset
 dataset = load_dataset("dyngnosis/function_names_v2", split="train")
@@ -118,7 +152,16 @@ def get_llm_name_with_retry(code):
     max_retries = 3  # Define the maximum number of retries
     retries = 0
     while retries < max_retries:
-        llm_name = llm.predict(f"The following code was found in a malware sample.  Provide only JSON response in your response.  Ensure the JSON is properly formatted and control characters are escaped.  It must contain 'short_summary', 'step_by_step_description', and 'new_function_name' that provides a long descriptive name that describes the purpose of the function. Be specific.  Here is the code:\r\n {code}")
+        prompt = f"The following code was found in a malware sample.  Provide only JSON response in your response.  Ensure the JSON is properly formatted and control characters are escaped.  It must contain 'short_summary', 'step_by_step_description', and 'new_function_name' that provides a long descriptive name that describes the purpose of the function. The step-by-step description must use Markdown syntax.  Identify any constants like windows error codes, HRESULT, and encryption constants.  Here is the code:\r\n {code}"
+        #use tiktoken to get the token count of prompt
+        encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        print(prompt)
+
+        token_count = len(encoding.encode(prompt))
+        if token_count > 4096:
+            llm_name = llm3516.predict(prompt)
+        else:
+            llm_name = llm.predict(prompt)
         print(llm_name)
         try:
             response_json = json.loads(llm_name)
@@ -141,11 +184,14 @@ def get_llm_name_with_retry(code):
     return None
 
 def generate_decode_response(code):
-    full_prompt = f"""<s>[INST]<<SYS>> You are an advanced malware reverse engineer capable of understanding decompiled C code and identifying malicious functionality<</SYS>>
+    full_prompt = f"""<s>[INST]<<SYS>> You are an advanced malware reverse engineer capable of understanding decompiled C code and identifying malicious functionality.  Be sure to mention any constants related to encryption algoritms Windows error codes and HRESULT codes.  Be descriptive about what API calls do.<</SYS>>
 
-You must output a descriptive ### Function Summary that describes the following decompiled code followed by a descriptive ### New Function Name 
+You must output a descriptive. You should use Markdown syntax. ### Function Summary that describes the following decompiled code followed by a descriptive ### New Function Name 
 
-Do not provide any extra information in the ### New Function Name. Only provide the name of the function. Do not include any extra information.[/INST]
+Do not provide any extra information in the ### New Function Name. Only provide the name of the function. Do not include any extra information.
+
+
+[/INST]
 
 ### Code:
 {code}
@@ -164,20 +210,23 @@ Do not provide any extra information in the ### New Function Name. Only provide 
         #repetition_penalty = 1.8
         #repetition_penalty_sustain
         #token_repetition_penalty_decay
-
-        response = tokenizer.decode(\
-            model.generate(\
-                **model_input,\
-                max_new_tokens=1500)[0],\
-                skip_special_tokens=True,\
-                repetition_penalty=1.8,\
-                temperature=0)
+        try:        
+            response = tokenizer.decode(\
+                model.generate(\
+                    **model_input,\
+                    max_new_tokens=1500)[0],\
+                    skip_special_tokens=True,\
+                    repetition_penalty=1.8,\
+                    temperature=0)
+        except torch.cuda.CudaError:
+            print("Out of memory error. Telling user to try a shorter function.")
+            return {}
+            
         try:
             extract_function_info(response)
         except:
             print("--------------", response, "----------------")
     return response
-
 
 #This is for extracting the function summary and new function name from the decode-llm response
 def extract_function_info(content: str):
@@ -232,6 +281,24 @@ def llm_rename_function(code):
     
     return analysis_results
 
+@app.post('/beta')
+async def request_beta_key(data: BetaRequestData):
+    # Check if email already exists
+    query = select(BetaRequest).where(BetaRequest.email == data.email)
+    existing_email = await database.fetch_one(query)
+    
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email already registered for beta.")
+
+    # Add email to the beta_requests table
+    beta_request_entry = BetaRequest(email=data.email)
+    db = SessionLocal()
+    db.add(beta_request_entry)
+    db.commit()
+    db.close()
+
+    return {"status": "success", "message": "Beta key request registered successfully."}
+
 @app.get('/')
 async def index():
     return templates.TemplateResponse("index.html", {"request": {}})
@@ -239,41 +306,48 @@ async def index():
 @app.get('/sample')
 async def sample():
     # Return a single sample from the dataset for demonstration purposes
-    return dataset[0]
+    return dataset[0] 
 
 @app.post('/evaluate')
-async def evaluate(data_point: DataPoint):
-    response_json = llm_rename_function(data_point)
+async def evaluate(data: EvaluateLocalData):
+    response_json = llm_rename_function(data.code)
     analysis_results = {
         "llm_name": response_json.get("llm_name", "LLM_ERROR"),
         "llm_short_summary": response_json.get("llm_short_summary", "LLM_ERROR"),
         "llm_step_by_step_description": response_json.get("llm_step_by_step_description", "LLM_ERROR"),
     }
+
+    # Store the request and response data in the EvaluationLog table
+    log = EvaluationLog(request_data=json.dumps(data.dict()), response_data=json.dumps(analysis_results))
+    db = SessionLocal()
+    db.add(log)
+    db.commit()
+    db.close()
     return analysis_results    
-
-
-@app.get('/approved')
-async def get_approved():
-    return {"approved_items": approved_dataset}
 
 @app.post('/evaluate_local')
 async def evaluate_local(data: EvaluateLocalData):
-    #get local llm response
+    # Get local llm response
     response = generate_decode_response(data.code)
     extracted_data = extract_function_info(response)
-    print(extracted_data)
-    response = {
+    analysis_results = {
         'llm_name': extracted_data["New Function Name"],
         'llm_short_summary': extracted_data["Function Summary"],
         'llm_step_by_step_description': response
     }
-    
-    return response
+
+    # Store the request and response data in the EvaluationLog table
+    log = EvaluationLog(request_data=json.dumps(data.dict()), response_data=json.dumps(analysis_results))
+    db = SessionLocal()
+    db.add(log)
+    db.commit()
+    db.close()
+    return analysis_results
 
 @app.get('/review')
 async def review(category: str = "all"):
     category_dict = {
-    "enumeration": ["CreateToolhelp32Snapshot","EnumDeviceDrivers","EnumProcesses","EnumProcessModules","EnumProcessModulesEx","FindFirstFileA","FindNextFileA","GetLogicalProcessorInform","tion","GetLogicalProcessorInformationEx","GetModuleBaseNameA","GetSystemDefaultLangId","GetVersionExA","GetWindowsDirectoryA","IsWoW64Process","Module32First","Module32Next","Process32First","Process32Next","ReadProcessMemory","Thread32First","Thread32Next","GetSystemDirectoryA","GetSystemTime","ReadFile","GetComputerNameA","Vi","tualQueryEx","GetProcessIdOfThread","GetProcessId","GetCurrentThread","GetCurrentThreadId","GetThreadId","GetThreadInformation","GetCurrentProcess","GetCurrentProcessId","SearchPathA","GetFileTime","GetFileAttributesA","LookupPrivilegeValueA","LookupAccountNameA","GetCurrentHwProfileA","GetUserNameA","RegEnumKeyExA","RegEnumValueA","RegQueryInfoKeyA","RegQueryMultipleValuesA","RegQueryValueExA","NtQueryDirectoryFile","NtQueryInformationProcess","NtQuerySystemEnvironmentValueEx","EnumDesktop","EnumWindows","NetShareEnum","NetShareGetInfo","NetShareCheck","GetAdaptersInfo","PathFileExistsA","GetNativeSystemInfo","RtlGetVersion","GetIpNetTable","GetLogicalDrives","GetDriveTypeA","RegEnumKeyA","WNetEnumResourceA","WNetCloseEnum","FindFirstUrlCacheEntryA","FindNextUrlCacheEntryA","WNetAddConnection2A","WNetAddConnectionA","EnumResourceTypesA","EnumResourceTypesExA","GetSystemTimeAsFileTime","GetThreadLocale","EnumSystemLocalesA"],
+    "enumeration": ["CreateToolhelp32Snapshot","EnumDeviceDrivers","EnumProcesses","EnumProcessModules","EnumProcessModulesEx","FindFirstFileA","FindNextFileA","GetLogicalProcessorInformtion","GetLogicalProcessorInformationEx","GetModuleBaseNameA","GetSystemDefaultLangId","GetVersionExA","GetWindowsDirectoryA","IsWoW64Process","Module32First","Module32Next","Process32First","Process32Next","ReadProcessMemory","Thread32First","Thread32Next","GetSystemDirectoryA","GetSystemTime","ReadFile","GetComputerNameA","Vi","tualQueryEx","GetProcessIdOfThread","GetProcessId","GetCurrentThread","GetCurrentThreadId","GetThreadId","GetThreadInformation","GetCurrentProcess","GetCurrentProcessId","SearchPathA","GetFileTime","GetFileAttributesA","LookupPrivilegeValueA","LookupAccountNameA","GetCurrentHwProfileA","GetUserNameA","RegEnumKeyExA","RegEnumValueA","RegQueryInfoKeyA","RegQueryMultipleValuesA","RegQueryValueExA","NtQueryDirectoryFile","NtQueryInformationProcess","NtQuerySystemEnvironmentValueEx","EnumDesktop","EnumWindows","NetShareEnum","NetShareGetInfo","NetShareCheck","GetAdaptersInfo","PathFileExistsA","GetNativeSystemInfo","RtlGetVersion","GetIpNetTable","GetLogicalDrives","GetDriveTypeA","RegEnumKeyA","WNetEnumResourceA","WNetCloseEnum","FindFirstUrlCacheEntryA","FindNextUrlCacheEntryA","WNetAddConnection2A","WNetAddConnectionA","EnumResourceTypesA","EnumResourceTypesExA","GetSystemTimeAsFileTime","GetThreadLocale","EnumSystemLocalesA"],
     "injection" : ["CreateFileMappingA","CreateProcessA","CreateRemoteThread","CreateRemoteThreadEx","GetModuleHandleA","GetProcAddress","GetThreadContext","HeapCreate","LoadLibraryA","LoadLibraryExA","LocalAlloc","MapViewOfFile","MapViewOfFile2","MapViewOfFile3","MapViewOfFileEx","OpenThread","Process32First","Process32Next","QueueUserAPC","ReadProcessMemory","ResumeThread","SetProcessDEPPolicy","SetThreadContext","SuspendThread","Thread32First","Thread32Next","Toolhelp32ReadProcessMemory","VirtualAlloc","VirtualAllocEx","VirtualProtect","VirtualProtectEx","WriteProcessMemory","VirtualAllocExNuma","VirtualAlloc2","VirtualAlloc2FromApp","VirtualAllocFromApp","VirtualProtectFromApp","CreateThread","WaitForSingleObject","OpenProcess","OpenFileMappingA","GetProcessHeap","GetProcessHeaps","HeapAlloc","HeapReAlloc","GlobalAlloc","AdjustTokenPrivileges","CreateProcessAsUserA","OpenProcessToken","CreateProcessWithTokenW","NtAdjustPrivilegesToken","NtAllocateVirtualMemory","NtContinue","NtCreateProcess","NtCreateProcessEx","NtCreateSection","NtCreateThread","NtCreateThreadEx","NtCreateUserProcess","NtDuplicateObject","NtMapViewOfSection","NtOpenProcess","NtOpenThread","NtProtectVirtualMemory","NtQueueApcThread","NtQueueApcThreadEx","NtQueueApcThreadEx2","NtReadVirtualMemory","NtResumeThread","NtUnmapViewOfSection","NtWaitForMultipleObjects","NtWaitForSingleObject","NtWriteVirtualMemory","RtlCreateHeap","LdrLoadDll","RtlMoveMemory","RtlCopyMemory","SetPropA","WaitForSingleObjectEx","WaitForMultipleObjects","WaitForMultipleObjectsEx","KeInsertQueueApc","Wow64SetThreadContext","NtSuspendProcess","NtResumeProcess","DuplicateToken","NtReadVirtualMemoryEx","CreateProcessInternal","EnumSystemLocalesA","UuidFromStringA"],
     "evasion" : ["CreateFileMappingA","DeleteFileA","GetModuleHandleA","GetProcAddress","LoadLibraryA","LoadLibraryExA","LoadResource","SetEnvironmentVariableA","SetFileTime","Sleep","WaitForSingleObject","SetFileAttributesA","SleepEx","NtDelayExecution","NtWaitForMultipleObjects","NtWaitForSingleObject","CreateWindowExA","RegisterHotKey","timeSetEvent","IcmpSendEcho","WaitForSingleObjectEx","WaitForMultipleObjects","WaitForMultipleObjectsEx","SetWaitableTimer","CreateTimerQueueTimer","CreateWaitableTimer","SetWaitableTimer","SetTimer","Select","ImpersonateLoggedOnUser","SetThreadToken","DuplicateToken","SizeOfResource","LockResource","CreateProcessInternal","TimeGetTime","EnumSystemLocalesA","UuidFromStringA"],
     "spying" : ["AttachThreadInput","CallNextHookEx","GetAsyncKeyState","GetClipboardData","GetDC","GetDCEx","GetForegroundWindow","GetKeyboardState","GetKeyState","GetMessageA","GetRawInputData","GetWindowDC","MapVirtualKeyA","MapVirtualKeyExA","PeekMessageA","PostMessageA","PostThreadMessageA","RegisterHotKey","RegisterRawInputDevices","SendMessageA","SendMessageCallbackA","SendMessageTimeoutA","SendNotifyMessageA","SetWindowsHookExA","SetWinEventHook","UnhookWindowsHookEx","BitBlt","StretchBlt","GetKeynameTextA"],
@@ -296,7 +370,6 @@ async def review(category: str = "all"):
         )
     )
     unreviewed_count = await database.fetch_val(count_query)
-
     query = select(Function).where(
         and_(
             Function.is_reviewed == False, 
@@ -311,10 +384,9 @@ async def review(category: str = "all"):
 
     if result:
         # send the source code to hf model
-        
         code_to_analyze = result.input
-        llm_response_str = generate_decode_response(code_to_analyze)
-        print(extract_function_info(llm_response_str))
+        #llm_response_str = generate_decode_response(code_to_analyze)
+        #print(extract_function_info(llm_response_str))
 
         function_name = result.output
         if result.llm_step_by_step_description is not None:
@@ -353,7 +425,6 @@ class UpdateOutputData(BaseModel):
     new_short_summary: str  
     new_step_by_step_description: str  
 
-
 @app.post('/update-output')
 async def update_output(data: UpdateOutputData):
     query = (update(Function).where(Function.id == data.function_id)
@@ -363,6 +434,22 @@ async def update_output(data: UpdateOutputData):
     await database.execute(query)
     return {"status": "success"}
 
+@app.post('/suggest')
+async def suggest(data: SuggestionData):
+    # Create a new Suggestion entry
+    suggestion_entry = Suggestion(
+        sha256=data.sha256,
+        offset=data.offset,
+        code=data.code,
+        suggestion=data.suggestion
+    )
+    
+    db = SessionLocal()
+    db.add(suggestion_entry)
+    db.commit()
+    db.close()
+
+    return {"status": "success", "message": "Suggestion added successfully."}
 
 @app.post('/action')
 async def action(data: ActionData):
@@ -389,27 +476,6 @@ def load_data_to_db():
             db.add(function)
         db.commit()
     db.close()
-
-# def generate_response(data_point):
-#     full_prompt = f"""<s>[INST]<<SYS>> You are an advanced malware reverse engineer capable of understanding decompiled C code and identifying malicious functionality<</SYS>>
-
-# You must output a descriptive ### Function Summary that describes the following decompiled code[/INST]
-
-# ### Code:
-# {data_point["code"]}
-
-# ### Function Summary:
-# """
-    
-#     max_new_tokens = 4096 - len(tokenizer.encode(full_prompt))
-#     print("max_new_tokens", max_new_tokens)
-#     print("full_prompt", full_prompt)
-#     print(len(tokenizer.encode(full_prompt)))
-
-#     model_input = tokenizer(full_prompt, return_tensors="pt", max_length=4096, truncation=True).to("cuda")
-#     with torch.no_grad():
-#         response = tokenizer.decode(model.generate(**model_input, max_new_tokens=500)[0], skip_special_tokens=True)
-#     return response
 
 if __name__ == "__main__":
     import uvicorn
