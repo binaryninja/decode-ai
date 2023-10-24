@@ -30,7 +30,9 @@ def send_code_to_server(sha256, function_offset, code, suggestion):
     Returns:
         dict: A dictionary containing the server's response.
     """
-    url = "http://localhost:8000/suggest"  # Adjust the URL if needed
+    #url = "http://localhost:8000/suggest"  # Adjust the URL if needed
+    url = "http://lupine.richards.ai:9001/suggest"  # Adjust the URL if needed
+
 
 
     print(sha256, function_offset, code, suggestion)

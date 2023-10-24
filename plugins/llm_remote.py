@@ -30,8 +30,8 @@ def send_code_to_server(sha256, function_offset, code):
     Returns:
         dict: A dictionary containing the server's response.
     """
-    url = "http://decode.richards.ai:9001/evaluate"  # Adjust the URL if needed
-    url = "http://localhost:8000/evaluate"  # Adjust the URL if needed
+    url = "http://lupine.richards.ai:9001/evaluate"  # Adjust the URL if needed
+    #url = "http://localhost:8000/evaluate"  # Adjust the URL if needed
     data = {
         "sha256": sha256,
         "function_offset": function_offset,

@@ -1,0 +1,8 @@
+tiktoken
+openai
+databases
+sqlalchemy
+fastapi
+httptools==0.1.*
+uvloop
+requests
